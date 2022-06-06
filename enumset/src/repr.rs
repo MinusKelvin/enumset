@@ -33,6 +33,7 @@ pub trait EnumSetTypeRepr :
     fn trailing_zeros(&self) -> u32;
 
     fn and_not(&self, other: Self) -> Self;
+    fn wrapping_sub(&self, other: Self) -> Self;
 
     fn from_u8(v: u8) -> Self;
     fn from_u16(v: u16) -> Self;
@@ -105,6 +106,11 @@ macro_rules! prim {
             #[inline(always)]
             fn and_not(&self, other: Self) -> Self {
                 (*self) & !other
+            }
+
+            #[inline(always)]
+            fn wrapping_sub(&self, other: Self) -> Self {
+                (*self).wrapping_sub(other)
             }
 
             #[inline(always)]

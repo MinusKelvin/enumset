@@ -496,6 +496,14 @@ impl<T: EnumSetType> EnumSet<T> {
         EnumSetIter::new(*self)
     }
 
+    /// Iterates the subsets of the set.
+    ///
+    /// Note that iterator invalidation is impossible as the iterator contains a copy of this type,
+    /// rather than holding a reference to it.
+    pub fn subsets(&self) -> EnumSetSubsetIter<T> {
+        EnumSetSubsetIter::new(*self)
+    }
+
     /// Returns a `T::Repr` representing the elements of this set.
     ///
     /// Unlike the other `as_*` methods, this method is zero-cost and guaranteed not to fail,
@@ -888,6 +896,56 @@ impl<T: EnumSetType> DoubleEndedIterator for EnumSetIter<T> {
             let bit = T::Repr::WIDTH - 1 - self.set.__priv_repr.leading_zeros();
             self.set.__priv_repr.remove_bit(bit);
             unsafe { Some(T::enum_from_u32(bit)) }
+        }
+    }
+}
+
+/// The iterator used by [`EnumSet::subsets`].
+#[derive(Clone, Debug)]
+pub struct EnumSetSubsetIter<T: EnumSetType> {
+    set: EnumSet<T>,
+    next: EnumSet<T>,
+    done: bool,
+}
+
+impl<T: EnumSetType> EnumSetSubsetIter<T> {
+    fn new(set: EnumSet<T>) -> EnumSetSubsetIter<T> {
+        EnumSetSubsetIter { set, next: EnumSet::empty(), done: false }
+    }
+}
+
+impl<T: EnumSetType> Iterator for EnumSetSubsetIter<T> {
+    type Item = EnumSet<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            None
+        } else {
+            let current = self.next;
+
+            // Carry-rippler trick for iterating subsets of a bitset. To the best of my knowledge,
+            // this was first introduced by Marcel van Kervinck on rec.ganes.chess in 1994.
+            //
+            // If we have a bitset `d` that we want to enumerate the subsets of, and a current
+            // subset `n`, we can get the next subset by filling in the irrelevant bits `!d` and
+            // then adding 1. This causes carry bits to carry through the irrelevant bits of `n`.
+            // We then mask away whatever irrelevant bits remain.
+            
+            // The full expression is `((n | !d) + 1) & d`, although we can improve this.
+            // Since `n` is a subset of `d`, it shares no bits with `!d`. This means we can replace
+            // the bitwise or with an add, to get `(n + !d + 1) & d`. `!d + 1` is equal to `-d`
+            // under two's complement, so we can just subtract `d` to get `(n - d) & d`.
+            let set = self.set.__priv_repr;
+            let next = current.__priv_repr.wrapping_sub(set) & set;
+
+            // SAFETY: By the invariants of `EnumSet<T>`, `set` only has valid bits set. Since we
+            // mask away the clear bits of `set`, `next` must also have only valid bits set.
+            self.next.__priv_repr = next;
+            if next.is_empty() {
+                self.done = true;
+            }
+
+            Some(current)
         }
     }
 }
